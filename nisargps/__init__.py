@@ -10,4 +10,4 @@ Created on Thu Mar  7 08:37:18 2024
 __all__ = ['nisarStation']
 
 
-from nisarGPS.nisarStation import nisarStation
+from nisargps.nisarStation import nisarStation
