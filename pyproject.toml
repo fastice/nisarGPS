@@ -1,0 +1,28 @@
+[tool.poetry]
+name = "nisargps"
+version = "0.0.1"
+description = "Tools for NISAR GPS cal/val data"
+authors = ["Ian Joughin <irj@uw.edu>"]
+license = "MIT"
+readme = "README.md"
+homepage = "https://github.com/fastice/nisarGPS"
+repository = "https://github.com/fastice/nisarGPS"
+keywords = ["SAR", "NISAR"]
+
+[tool.poetry.dependencies]
+python = "^3.8"
+
+
+[tool.poetry.dev-dependencies]
+ipython = "*"
+
+[tool.poetry-dynamic-versioning]
+enable = true
+vcs = "git"
+style = "semver"
+
+[build-system]
+requires = ["setuptools", "poetry-core>=1.0.9"]
+build-backend = "poetry.core.masonry.api"
+#requires = ["setuptools", "poetry-core @ git+https://github.com/python-poetry/poetry-core.git@master"]
+
