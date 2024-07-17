@@ -141,7 +141,6 @@ class nisarStation():
 
         '''
         date, epoch, lat, lon, z, sigma3 = self._readFile(filePath)
-        print(type(date))
         #
         self._determineEPSG(lat[0])
         #
