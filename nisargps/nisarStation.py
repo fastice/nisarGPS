@@ -322,7 +322,7 @@ class nisarStation():
         date, x, y, z, epoch = self.subsetXYZ(date1, date2,
                                               dateFormat=dateFormat, **kwargs)
         if x is np.nan:
-            return np.nan, np.nan
+            return np.nan, np.nan, np.nan, np.nan
         #
         # Uses slope of linear regression as velocity estimate
         vxPS, intercept, rx, px, sigmax = linregress(epoch, x)
@@ -373,7 +373,7 @@ class nisarStation():
                                                     minPoints=minPoints,
                                                     **kwargs)
         if x1 is np.nan or x2 is np.nan:
-            return np.nan, np.nan
+            return np.nan, np.nan, np.nan, np.nan
         #
         # Compute averages centered on date1 and date2
         x1Avg, x2Avg = np.mean(x1), np.mean(x2)
