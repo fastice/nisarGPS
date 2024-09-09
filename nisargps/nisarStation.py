@@ -14,14 +14,12 @@ import pyproj
 from scipy.stats import linregress
 import nisarcryodb
 import sys
-import traceback
+
 
 class nisarStation():
     '''
     Abstract class to define parser for NISAR HDF products.
     '''
- 
-            
     def catchError(func):
         ''' Decorator to trap and abbreviate errors '''
         @functools.wraps(func)
@@ -32,7 +30,6 @@ class nisarStation():
             try:
                 return func(inst, *args, **kwargs)
             except Exception as errMsg:
-                #print(traceback.format_exc())
                 excType, excObj, excTb = sys.exc_info()
                 tb = excTb
                 while tb is not None:
@@ -41,21 +38,17 @@ class nisarStation():
                 msg = f'Error in: {type(inst).__name__}.{func.__name__} at ' \
                     f'line {line} \nMessage: {errMsg}'
                 inst.printError(msg)
-                if not traceBack:
-                    sys.tracebacklimit=0
-                
+
                 def myExit(traceBack):
                     try:
                         sys.exit()
-                    except SystemExit as message:
+                    except SystemExit:
                         if traceBack:
                             sys.exit()
                 # This will only do a full exit if traceBack is True
                 myExit(traceBack)
         return catchErrorInner
-  
 
-    
     @catchError
     def __init__(self, stationName,  epsg=None, useDB=True, DBConnection=None,
                  DBConfigFile='calvaldb_config.ini', **kwargs):
@@ -67,26 +60,29 @@ class nisarStation():
         stationName : str
             Four character station ID.
         epsg : str, optional
-            Epsg code for for Arctic (3413) or Antarctic (3031). Default is None to autodetect.
+            Epsg code for for Arctic (3413) or Antarctic (3031). Default is
+            None to autodetect based on north or south latitudes.
         useDB : bool, optional
-            Get GPS from database. Altertnatively read from text file (not fully support). Default is True.
+            Get GPS from database. Alternatively read from text file
+            (not fully supported). Default is True.
         DBConnection: nisarcryodb
-            Can pass in a connection, which allows a connection to be use for multiple stations. 
-            The default None so new connection is opened.
+            Pass in a connection, which can be used for multiple stations.
+            The default None, which opens a dedicated connection.
         DBConfigFile: str, optional
-            Config file path. Default is ./calvaldb_config.ini. 
+            Database config file path. Default is ./calvaldb_config.ini.
         traceBack: bool, optional
-            By default error handler prints abrv. msg. Set true for full traceback.
-        **keywords : TYPE
-            DESCRIPTION.
+            By default error handler prints abreviated messages. Set true for
+            full   traceback.
+        **kwords : dict
+            Keywords to pass to other methods (.e.g., error handler).
 
         Returns
         -------
         None.
 
         '''
-        print(DBConnection)
         self.stationName = stationName
+        # Variables to store text input data
         self.date = np.array([])
         self.epoch = np.array([])
         self.lat = np.array([])
@@ -108,26 +104,25 @@ class nisarStation():
         # Set station id if using a data base
         self.stationID = None
         if self.DB is not None:
-             self.stationID = self.DB.stationNameToID(stationName)
+            self.stationID = self.DB.stationNameToID(stationName)
         # Cache year lengths for speed
         self._computeYearLengthLookUp(**kwargs)
 
- 
-    
-    @catchError       
+    @catchError
     def _computeYearLengthLookUp(self, **kwargs):
         '''
         Cache year lengths to speedup date conversions
         '''
         years = range(1990, 2100)
-        lengths = np.array([(datetime(y + 1, 1, 1) - 
-                    datetime(y, 1, 1)).total_seconds() for y in years])
+        lengths = np.array(
+            [(datetime(y + 1, 1, 1) - datetime(y, 1, 1)).total_seconds()
+             for y in years])
         self.yearLengthLookupSeconds = dict(zip(years, lengths))
         self.yearLengthLookupDays = dict(zip(years, lengths/86400))
-       
+
     def printError(self, msg):
         '''
-        Print error message
+        Print error message.
         Parameters
         ----------
         msg : str
@@ -139,9 +134,15 @@ class nisarStation():
         length = max([len(x) for x in msg.split('\n')])
         stars = ''.join(['*']*length)
         print(f'\n\033[1;31m{stars}\n{msg} \n{stars}\n \033[0m\n')
-    
+
     @catchError
     def _initCoordinateConversion(self, **kwargs):
+        '''
+        Use pyproj to setup lltoxy conversion for epsg.
+        Returns
+        -------
+        None.
+        '''
         print('EPSG', self.epsg)
         self.crs = pyproj.CRS.from_epsg(str(self.epsg))
         self.proj = pyproj.Proj(str(self.epsg))
@@ -149,13 +150,13 @@ class nisarStation():
             self.lltoxy = pyproj.Transformer.from_crs("EPSG:4326",
                                                       f"EPSG:{self.epsg}"
                                                       ).transform
-    
+
     @catchError
     def _determineEPSG(self, lat, **kwargs):
         '''
         Determine epsg base on lat (3031, 3413) based on a lat value
         lat: float
-            latitude value used to setepsg.
+            latitude value used to detect depsg.
         Returns
         -------
         None.
@@ -166,12 +167,15 @@ class nisarStation():
                 self.epsg = 3031
             elif lat > 55:
                 self.epsg = 3413
+            else:
+                self._printError('Mid-band latitude(<|55| deg), cannot '
+                                 'autodetect epsg')
         #
 
     @catchError
     def _readFile(self, filePath, **kwargs):
         '''
-        Read a JPL processed GPS file
+        Read a JPL processed GPS text file for no DB case.
 
         Parameters
         ----------
@@ -180,7 +184,7 @@ class nisarStation():
 
         Returns
         -------
-        6xN result with date, decDate, lat, lon, z, sigma
+        date, decDate, lat, lon, z, sigma
 
         '''
         if not os.path.exists(filePath):
@@ -209,7 +213,7 @@ class nisarStation():
         epoch, lat, lon, z, sigma = np.transpose(newData)
 
         return np.array(date),  epoch, lat, lon, z, sigma
-   
+
     @catchError
     def addData(self, filePath, **kwargs):
         '''
@@ -249,10 +253,9 @@ class nisarStation():
         self.projLengthScale = self.proj.get_factors(0, self.meanLat
                                                      ).parallel_scale
 
-
     @catchError
     def computeVelocity(self, date1, date2, method='regression', minPoints=10,
-                        dateFormat='%Y-%m-%d', **kwargs):
+                        dateFormat='%Y-%m-%d', averagingPeriod=12, **kwargs):
         '''
          Compute velocity for date range
 
@@ -264,18 +267,19 @@ class nisarStation():
             Second date in interval to compute date.
         method : str, optional
             Use either point or regression. The default is 'regression'
-        dateFormat : TYPE, optional
-            DESCRIPTION. The default is '%Y-%m-%d'.
-        minPoints : TYPE, optional
-            Return nan's if # of valid points is < minPoits. The default is 10.
-        averagingPeriod : number, optional
-            For 'point' methdod only. The number of hours on either side of 
-            date to average when computeing two point positions.
-            The default is 12.
+        dateFormat : str optional
+            Date format for data1 and date2. The default is '%Y-%m-%d'.
+        minPoints : int, optional
+            Return nan's if the number of valid points is < minPoits. The
+            default is 10.
+        averagingPeriod : int or float, optional
+            For 'point' method only. The number of hours on either side of
+            date1 & date2 to average when computing the two point positions.
+            The default is 12 to yield the difference of two daily averages.
         Returns
         -------
-        vx, vy, x, y : velocity and mean location of measurement
-
+        vvx, vy, x, y : velocity (vx,vy) and mean location (x, y) of the
+        measurement.
         '''
         if method == 'regression':
             return self.computeVelocityRegression(date1, date2,
@@ -289,12 +293,13 @@ class nisarStation():
                                               averagingPeriod=averagingPeriod,
                                               **kwargs)
         else:
-            self.printError(f'Invalid method {method}, use point or regression')
+            self.printError(
+                f'Invalid method {method}, use point or regression')
             return np.nan, np.nan, np.nan, np.nan
-         
+
     @catchError
     def computeVelocityRegression(self, date1, date2, minPoints=10,
-                        dateFormat='%Y-%m-%d',  **kwargs):
+                                  dateFormat='%Y-%m-%d',  **kwargs):
         '''
          Compute velocity for date range
 
@@ -304,14 +309,15 @@ class nisarStation():
             First date in interval to compute date.
         date2 : datetime date
             Second date in interval to compute date..
-        dateFormat : TYPE, optional
-            DESCRIPTION. The default is '%Y-%m-%d'.
-        minPoints : TYPE, optional
-            Return nan's if # of valid points is < minPoits. The default is 10.
+        dateFormat : str, optional
+            Format for date1 and date2. The default is '%Y-%m-%d'.
+        minPoints : int, optional
+            Return nan's if the number of valid points is < minPoits. The
+            default is 10.
         Returns
         -------
-        vx, vy, x, y : velocity and mean location of measurement
-
+        vx, vy, x, y : velocity (vx,vy) and mean location (x, y) of the
+        measurement.
         '''
         date, x, y, z, epoch = self.subsetXYZ(date1, date2,
                                               dateFormat=dateFormat, **kwargs)
@@ -322,13 +328,15 @@ class nisarStation():
         vxPS, intercept, rx, px, sigmax = linregress(epoch, x)
         vyPS, intercept, ry, py, sigmay = linregress(epoch, y)
         # Scale from projected to actual coordinates
-        return vxPS/self.projLengthScale, vyPS/self.projLengthScale, np.mean(x), np.mean(y)
-        
+        return vxPS/self.projLengthScale, vyPS/self.projLengthScale, \
+            np.mean(x), np.mean(y)
+
     @catchError
     def computeVelocityPtToPt(self, date1, date2, minPoints=10,
-                              dateFormat='%Y-%m-%d', averagingPeriod=12, **kwargs):
+                              dateFormat='%Y-%m-%d', averagingPeriod=12,
+                              **kwargs):
         '''
-         Compute velocity for date range differencing point positions
+        Compute velocity for date range differencing point positions
 
         Parameters
         ----------
@@ -337,16 +345,20 @@ class nisarStation():
         date2 : datetime date
             Second date in interval to compute date.
         dateFormat : TYPE, optional
-            DESCRIPTION. The default is '%Y-%m-%d'.
+            Format for date1 and date2. The default is '%Y-%m-%d'. The default
+            is '%Y-%m-%d'.
         minPoints : int, optional
-            Return nan's if # of valid points is < minPoits. The default is 10.
-        averagingPeriod : number, optional
-            Number of hours on either side of date to average the positions.
-            The default is 12.
+            Return nan's if the number of valid points is < minPoits. The
+            default is 10.
+       averagingPeriod : int or float, optional
+            The number of hours on either side of date1 & date2 to average
+            when computing the two point positions. The default is 12 to
+            yield the difference of two daily averages.
+
         Returns
         -------
-        None.
-
+        vx, vy, x, y : velocity (vx,vy) and mean location (x, y) of the
+        measurement.
         '''
         date1 = self._formatDate(date1, dateFormat=dateFormat)
         date2 = self._formatDate(date2, dateFormat=dateFormat)
@@ -363,10 +375,9 @@ class nisarStation():
         if x1 is np.nan or x2 is np.nan:
             return np.nan, np.nan
         #
-        # Uses slope of linear regression as velocity estimate
+        # Compute averages centered on date1 and date2
         x1Avg, x2Avg = np.mean(x1), np.mean(x2)
         y1Avg, y2Avg = np.mean(y1), np.mean(y2)
-
         epoch1Avg, epoch2Avg = np.mean(epoch1), np.mean(epoch2)
         dT = epoch2Avg - epoch1Avg
         #
@@ -379,8 +390,9 @@ class nisarStation():
 
     @catchError
     def computeVelocityTimeSeries(self, date1, date2, dT, sampleInterval,
-                                  dateFormat='%Y-%m-%d', method='regression',
-                                  averagingPeriod=None, minPoints=10,  **kwargs):
+                                  method='regression', dateFormat='%Y-%m-%d',
+                                  averagingPeriod=12, minPoints=10,
+                                  **kwargs):
         '''
         Compute velocity time series from JPL data
 
@@ -398,36 +410,40 @@ class nisarStation():
             Use either point or regression. The default is 'regression'
         dateFormat : str, optional
             If date1/2 is a str, to datetime format. The default is '%Y-%m-%d'.
-        method 
+        minPoints : int, optional
+            Return nan's if the number of valid points is < minPoits. The
+            default is 10.
+        averagingPeriod : int or float, optional
+            The number of hours on either side of date1 & date2 to average
+            when computing the two point positions. The default is 12 to
+            yield the difference of two daily averages.
         Returns
         -------
-        vx, vy: nparray
-            velocty time series with samples every sampleInterval hours.
+        vx, vy, x, y: nparray
+            velocity time series (vx, vy) with corresponding positions(x, y)
+            with samples every sampleInterval hours.
 
         '''
         if method not in ['point', 'regression']:
             self.printError(f'Invalid method {method} keyword, must be point'
                             ' or regression')
-        if method == 'point':
-            if averagingPeriod is None:
-                averagingPeriod = dT/24.
         #
         # Convert to datetime if needed
         date1 = self._formatDate(date1, dateFormat=dateFormat)
         date2 = self._formatDate(date2, dateFormat=dateFormat)
         # Initialize
         currentDate = date1
+        lastDate = currentDate + timedelta(hours=dT)
         vxSeries, vySeries, dateSeries, xSeries, ySeries = [], [], [], [], []
         #
-        # Loop to compute velocities at sample intervale.
-        while currentDate + timedelta(hours=dT) < date2:
-           
+        # Loop to compute velocities at sample interval.
+        while lastDate < date2:
             vx, vy, x, y = self.computeVelocity(currentDate,
-                                                currentDate + timedelta(hours=dT),
+                                                lastDate,
                                                 method=method,
                                                 minPoints=minPoints,
                                                 averagingPeriod=averagingPeriod
-                                               )
+                                                )
             #
             dateSeries.append(currentDate + timedelta(hours=dT/2))
             vxSeries.append(vx)
@@ -435,8 +451,10 @@ class nisarStation():
             xSeries.append(x)
             ySeries.append(y)
             currentDate = currentDate + timedelta(hours=sampleInterval)
-        return np.array(dateSeries), np.array(vxSeries), np.array(vySeries), np.array(xSeries), np.array(ySeries)
-
+            lastDate = currentDate + timedelta(hours=dT)
+        # Done, return date, vx, vy, x, y
+        return np.array(dateSeries), np.array(vxSeries), np.array(vySeries), \
+            np.array(xSeries), np.array(ySeries)
 
     @catchError
     def _formatDate(self, date, dateFormat='%Y-%m-%d', **kwargs):
@@ -447,9 +465,9 @@ class nisarStation():
         ----------
         date : str or datetime
             date
-
         dateFormat : str, optional
-            If date1/2 is a str, to datetime format. The default is '%Y-%m-%d'.
+            If date is a str, the corresponding format use to convert to
+            datetime. The default is '%Y-%m-%d'.
 
         Returns
         -------
@@ -464,25 +482,32 @@ class nisarStation():
     def _datetimeToDecimalYear(self, date, **kwargs):
         '''
         Convert date time to decimal year
-        
+
         Parameters
         ----------
         date : datetime
-            date
+            date to be converted to decimal year
+        Returns
+        -------
+        date as datetime.
         '''
-        year = date.year
-        yearLength = (datetime(year + 1, 1, 1) - datetime(year, 1, 1)).total_seconds()
-        return year + (date - datetime(year, 1, 1)).total_seconds() / yearLength
+        yearLength = self.yearLengthLookupSeconds[date.year]
+        return date.year + \
+            (date - datetime(date.year, 1, 1)).total_seconds() / yearLength
 
     @catchError
     def _DecimalYearToDatetime(self, date, **kwargs):
         '''
         Convert date time to decimal year
-        
+
         Parameters
         ----------
         date : datetime
-            date
+            Date decimal year format (e.g., 2024.21)
+
+        Returns
+        -------
+        date as datetime.
         '''
         year = int(date)
         fracYear = date - year
@@ -492,13 +517,16 @@ class nisarStation():
     @catchError
     def _DecimalYearToDOYVector(self, date, **kwargs):
         '''
-        Convert decimal year to doy
-        
+        Convert decimal year to doy for an array of decimal years
+
         Parameters
         ----------
-        date : datetime
-            date
-            
+        date : np.array of datetimes
+            dates to be converted
+        Returns
+        -------
+        dates as day of year (DOY).
+
         '''
         # Compute year, frac year, and length of year
         year = date.astype(int)
@@ -508,7 +536,9 @@ class nisarStation():
         return (fracYear * yearLength).astype(int) + 1
 
     @catchError
-    def subsetXYZ(self, date1, date2, dateFormat='%Y-%m-%d %H:%M:%S', minPoints=1, quiet=True, removeOverlap=True, **kwargs):
+    def subsetXYZ(self, date1, date2, dateFormat='%Y-%m-%d %H:%M:%S',
+                  minPoints=1, removeOverlap=True, sigmaMultiple=True,
+                  quiet=True, **kwargs):
         '''
         Return all x,y, z points in interval [date1, date2]
 
@@ -519,13 +549,19 @@ class nisarStation():
         date2 : str or datetime
             Last date datetime or ascii with formate specified by dateFormat.
         dateFormat : datetime format str, optional
-            Format for conversion to date time. The default is '%Y-%m-%d %H:%M:%S'.
+            Format for conversion to date time. The default is
+            '%Y-%m-%d %H:%M:%S'.
         minPoints : int, optional
             Return nan's if # of valid points is < minPoits. The default is 1.
         removeOverlap : bool, optional
-            Return nan's if # of valid points is < minPoits. The default is 1.
+            Return just data for the 24 hour period corresponding to each day
+            file (i.e., removes the overlap between files).
+            The default is True.
         sigmaMultiple : int, optional.
-            Discard outliers > sigmaMuliple * sigma. Use None for no removal. The defaul is 3.
+            Discard outliers > sigmaMuliple * sigma. Use None for no removal.
+            The default is 3.
+        quiet : bool
+            Suppress warning messages. The default is True.
         Returns
         -------
         x, y, z np.array
@@ -537,14 +573,17 @@ class nisarStation():
         date2 = self._formatDate(date2, dateFormat=dateFormat, **kwargs)
         #
         if self.DB is None:
-            return self._subsetXYZtext(date1, date2, minPoints=minPoints, quiet=quiet, **kwargs)
-        return self._subsetXYZDB(date1, date2, minPoints=minPoints, quiet=quiet, **kwargs)
+            return self._subsetXYZtext(date1, date2, minPoints=minPoints,
+                                       quiet=quiet, **kwargs)
+        return self._subsetXYZDB(date1, date2, minPoints=minPoints,
+                                 quiet=quiet, **kwargs)
 
     @catchError
-    def _subsetXYZDB(self, date1, date2, dateFormat='%Y-%m-%d %H:%M:%S', 
-                     minPoints=1, removeOverlap=True, sigmaMultiple=3, quiet=True, **kwargs):
+    def _subsetXYZDB(self, date1, date2, dateFormat='%Y-%m-%d %H:%M:%S',
+                     minPoints=1, removeOverlap=True, sigmaMultiple=3,
+                     quiet=True, **kwargs):
         '''
-        Return all x,y, z points in interval [date1, date2]
+        Return all x, y, z points in interval [date1, date2]
 
         Parameters
         ----------
@@ -553,13 +592,17 @@ class nisarStation():
         date2 : str or datetime
             Last date datetime or ascii with formate specified by dateFormat.
         dateFormat : datetime format str, optional
-            Format for conversion to date time. The default is '%Y-%m-%d %H:%M:%S'.
+            Format for conversion to date time. The default is
+            '%Y-%m-%d %H:%M:%S'.
         minPoints : int, optional
             Return nan's if # of valid points is < minPoits. The default is 1.
         removeOverlap : bool, optional
             Return nan's if # of valid points is < minPoits. The default is 1.
         sigmaMultiple : int, optional.
-            Discard outliers > sigmaMuliple * sigma. Use None for no removal. The defaul is 3.
+            Discard outliers > sigmaMuliple * sigma. Use None for no removal.
+            The defaul is 3.
+        quiet : bool
+            Suppress warning messages. The default is True.
         Returns
         -------
         x, y, z np.array
@@ -569,9 +612,10 @@ class nisarStation():
         # Use decimal dates for DB queery
         d1 = self._datetimeToDecimalYear(date1, **kwargs)
         d2 = self._datetimeToDecimalYear(date2, **kwargs)
-  
+
         # Query data base for station data
-        data = self.DB.getStationDateRangeData(self.stationName, d1, d2, 'landice', 'gps_data')
+        data = self.DB.getStationDateRangeData(self.stationName, d1, d2,
+                                               'landice', 'gps_data')
         # This removes the overlap that comes with the GPS day files
         if removeOverlap:
             data = self._removeOverlap(data)
@@ -590,51 +634,57 @@ class nisarStation():
         #
         if sigmaMultiple is not None:
             x, y, data = self.removeOutliers(x, y, data,
-                                             sigmaMultiple=sigmaMultiple, **kwargs)
+                                             sigmaMultiple=sigmaMultiple,
+                                             **kwargs)
         #
         date = [self._DecimalYearToDatetime(d) for d in data['decimal_year']]
         # Lat dependendent length scale for projected meters to real meters
         self.meanLat = np.mean(data['lat'].to_numpy())
         self.projLengthScale = self.proj.get_factors(0, self.meanLat
                                                      ).parallel_scale
-        return date, x, y, data['ht_abv_eps'].to_numpy(), data['decimal_year'].to_numpy()
+        return date, x, y, data['ht_abv_eps'].to_numpy(), \
+            data['decimal_year'].to_numpy()
 
     @catchError
     def removeOutliers(self, x, y, data, sigmaMultiple=3, **kwargs):
         '''
-        Remove data where date is not equal to the nominal doy to remove overlap
-              date1 : TYPE
-            DESCRIPTION.
+        Remove data where date is not equal to the nominal doy to remove
+        overlap
+        x, y : nparray
+            Projected x and y positions.
+        data : Pandas dataframe
+            Dataframe with data returned from database.
+        returns:
+            Filtered versions of x, y, and data.
         '''
         epoch = data['decimal_year'].to_numpy()
         good = np.ones(x.shape, dtype=bool)  # Initially keep all
+        # Loop through variables and detect outlier as sigmaMultiple deviation
+        # from a line fit.
         for d in [x, y, data['ht_abv_eps'].to_numpy()]:
             fitResult = linregress(epoch, d)
             fit = fitResult[0] * epoch + fitResult[1]
             detrended = d - fit
             sigma = np.std(detrended)
-            good = np.logical_and(good, np.abs(detrended) < sigmaMultiple*sigma)
+            good = np.logical_and(good,
+                                  np.abs(detrended) < sigmaMultiple*sigma)
         return x[good], y[good], data[good]
 
     @catchError
     def _removeOverlap(self, data, **kwargs):
         '''
-        Remove data where date is not equal to the nominal doy to remove overlap
-        
+        Remove data where date is not equal to the nominal doy to remove
+        overlap. This is because 24 hour GPS dayfiles have several hours
+        overlap before and after the nominal 24 hour period.
+
         Parameters
         ----------
-        date1 : str or datetime
-            First date datetime or ascii with formate specified by dateFormat.
-        date2 : str or datetime
-            Last date datetime or ascii with formate specified by dateFormat.
-        dateFormat : datetime format str, optional
-            Format for conversion to date time. The default is '%Y-%m-%d %H:%M:%S'.
-        minPoints : int, optional
-            Return nan's if # of valid points is < minPoits. The default is 1.
-        removeOverlap : bool, optional
-            Return nan's if # of valid points is < minPoits. The default is 1.
-        sigmaMultiple : int, optional.
-            Discard outliers > sigmaMuliple * sigma. Use None for no removal. The defaul is 3.
+        x, y : nparray
+            Projected x and y positions.
+        data : Pandas dataframe
+            Dataframe with data returned from database.
+        returns:
+            Filtered versions of data.
         '''
         doy = self._DecimalYearToDOYVector(data['decimal_year'].to_numpy())
         nominalDoi = data['nominal_doy'].to_numpy()
@@ -642,25 +692,32 @@ class nisarStation():
         return data[keep]
 
     @catchError
-    def _subsetXYZtext(self, date1, date2, minPoints=1, quiet=True, **kwargs):
+    def _subsetXYZtext(self, date1, date2, minPoints=1, dateFormat='%Y-%m-%d',
+                       quiet=True, **kwargs):
         '''
-        Return all x, y, z points in interval [date1, date2] for text input
+        Return all x, y, z points in interval [date1, date2] for text input.
 
         Parameters
         ----------
-        date1 : TYPE
-            DESCRIPTION.
-        date2 : TYPE
-            DESCRIPTION.
+        date1 : str or datetime
+            First date in date range.
+        date2 : str or datetime
+            Second date in date range.
         minPoints : TYPE, optional
             Return nan's if # of valid points is < minPoits. The default is 1.
-
+        dateFormat : datetime format str, optional
+            Format for conversion to date time. The default is '%Y-%m-%d'.
+              quiet : bool
+        Suppress warning messages. The default is True.
         Returns
         -------
         x, y, z np.array
             x, y, z values in projected coordinates.
 
         '''
+        # Convert to datetime if needed
+        date1 = self._formatDate(date1, dateFormat=dateFormat, **kwargs)
+        date2 = self._formatDate(date2, dateFormat=dateFormat, **kwargs)
         inRange = np.logical_and(self.date >= date1, self.date <= date2)
         if inRange.sum() < minPoints:
             if not quiet:
@@ -669,4 +726,3 @@ class nisarStation():
         #
         return self.date[inRange], self.x[inRange], self.y[inRange], \
             self.z[inRange], self.epoch[inRange]
-
