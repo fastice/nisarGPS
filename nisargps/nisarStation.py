@@ -255,7 +255,8 @@ class nisarStation():
 
     @catchError
     def computeVelocity(self, date1, date2, method='regression', minPoints=10,
-                        dateFormat='%Y-%m-%d', averagingPeriod=12, **kwargs):
+                        dateFormat='%Y-%m-%d', averagingPeriod=12,
+                        filters={}, **kwargs):
         '''
          Compute velocity for date range
 
@@ -285,12 +286,14 @@ class nisarStation():
             return self.computeVelocityRegression(date1, date2,
                                                   minPoints=minPoints,
                                                   dateFormat=dateFormat,
+                                                  filters=filters,
                                                   **kwargs)
         elif method == 'point':
             return self.computeVelocityPtToPt(date2, date1, date2,
                                               minPoints=minPoints,
                                               dateFormat=dateFormat,
                                               averagingPeriod=averagingPeriod,
+                                              filters=filters,
                                               **kwargs)
         else:
             self.printError(
@@ -299,7 +302,8 @@ class nisarStation():
 
     @catchError
     def computeVelocityRegression(self, date1, date2, minPoints=10,
-                                  dateFormat='%Y-%m-%d',  **kwargs):
+                                  dateFormat='%Y-%m-%d', filters={},
+                                  **kwargs):
         '''
          Compute velocity for date range
 
@@ -320,7 +324,8 @@ class nisarStation():
         measurement.
         '''
         date, x, y, z, epoch = self.subsetXYZ(date1, date2,
-                                              dateFormat=dateFormat, **kwargs)
+                                              dateFormat=dateFormat,
+                                              filters=filters, **kwargs)
         if x is np.nan:
             return np.nan, np.nan, np.nan, np.nan
         #
@@ -334,6 +339,7 @@ class nisarStation():
     @catchError
     def computeVelocityPtToPt(self, date1, date2, minPoints=10,
                               dateFormat='%Y-%m-%d', averagingPeriod=12,
+                              filters={},
                               **kwargs):
         '''
         Compute velocity for date range differencing point positions
@@ -367,10 +373,12 @@ class nisarStation():
         dates1, x1, y1, z1, epoch1 = self.subsetXYZ(date1 - tAvg,
                                                     date1 + tAvg,
                                                     minPoints=minPoints,
+                                                    filters=filters,
                                                     **kwargs)
         dates2, x2, y2, z2, epoch2 = self.subsetXYZ(date2 - tAvg,
                                                     date2 + tAvg,
                                                     minPoints=minPoints,
+                                                    filters=filters,
                                                     **kwargs)
         if x1 is np.nan or x2 is np.nan:
             return np.nan, np.nan, np.nan, np.nan
@@ -392,6 +400,7 @@ class nisarStation():
     def computeVelocityTimeSeries(self, date1, date2, dT, sampleInterval,
                                   method='regression', dateFormat='%Y-%m-%d',
                                   averagingPeriod=12, minPoints=10,
+                                  filters={},
                                   **kwargs):
         '''
         Compute velocity time series from JPL data
@@ -441,7 +450,8 @@ class nisarStation():
             vx, vy, x, y = self.computeVelocity(currentDate,
                                                 lastDate,
                                                 method=method,
-                                                minPoints=minPoints,
+                                                minPoints=minPoints,                
+                                                filters=filters,
                                                 averagingPeriod=averagingPeriod
                                                 )
             #
@@ -538,7 +548,7 @@ class nisarStation():
     @catchError
     def subsetXYZ(self, date1, date2, dateFormat='%Y-%m-%d %H:%M:%S',
                   minPoints=1, removeOverlap=True, sigmaMultiple=True,
-                  quiet=True, **kwargs):
+                  quiet=True, filters={}, **kwargs):
         '''
         Return all x,y, z points in interval [date1, date2]
 
@@ -576,12 +586,12 @@ class nisarStation():
             return self._subsetXYZtext(date1, date2, minPoints=minPoints,
                                        quiet=quiet, **kwargs)
         return self._subsetXYZDB(date1, date2, minPoints=minPoints,
-                                 quiet=quiet, **kwargs)
+                                 quiet=quiet, filters=filters, **kwargs)
 
     @catchError
     def _subsetXYZDB(self, date1, date2, dateFormat='%Y-%m-%d %H:%M:%S',
                      minPoints=1, removeOverlap=True, sigmaMultiple=3,
-                     quiet=True, **kwargs):
+                     quiet=True, filters={}, **kwargs):
         '''
         Return all x, y, z points in interval [date1, date2]
 
@@ -615,7 +625,8 @@ class nisarStation():
 
         # Query data base for station data
         data = self.DB.getStationDateRangeData(self.stationName, d1, d2,
-                                               'landice', 'gps_data')
+                                               'landice', 'gps_data',
+                                               filters=filters)
         # This removes the overlap that comes with the GPS day files
         if removeOverlap:
             data = self._removeOverlap(data)
